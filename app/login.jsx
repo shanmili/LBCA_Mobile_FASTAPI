@@ -2,16 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  StatusBar,
-  Platform,
-  Text,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StatusBar,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../constants/useTheme";
@@ -88,6 +88,9 @@ export default function LoginScreen() {
             </Text>
             <Text style={{ color: colors.muted, fontSize: 13 }}>
               Lapasan Baptist Christian Academy
+            </Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 8, textAlign: "center" }}>
+              Sign in with your student login ID. The password defaults to the same value.
             </Text>
           </View>
 
