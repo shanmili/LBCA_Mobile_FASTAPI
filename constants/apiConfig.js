@@ -1,6 +1,8 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+console.log("API BASE URL:", process.env.EXPO_PUBLIC_API_BASE_URL);
+
 function normalizeHost(value) {
   if (!value) return null;
 
@@ -35,13 +37,15 @@ export const API_BASE_URL =
   (Platform.OS === "android" && __DEV__ ? "http://10.0.2.2:8000" : null) ||
   (runtimeHost ? `http://${runtimeHost}:8000` : "http://127.0.0.1:8000");
 
+
 export const API_ENDPOINTS = {
   adminLogin: "/api/admin/login/",
   teacherLogin: "/api/teacher/login/",
   parentLogin: "/api/parent/login/",
   parentStudentInfo: "/api/parent/student-info/",
-  earlyWarnings: "/early-warnings/",
-  studentPaceById: (studentId) => `/api/student/${studentId}/pace/`,
-  studentWarningsById: (studentId) => `/api/student/${studentId}/warnings/`,
-  criticalWarnings: "/api/critical-warnings/",
+
+  earlyWarnings: "/api/early-warnings/",
+  criticalWarnings: "/api/early-warnings/critical",
+  studentPaceById: (studentId) => `/api/students/${studentId}/paces`,
+  studentWarningsById: (studentId) => `/api/students/${studentId}/warnings`,
 };

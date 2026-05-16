@@ -1,388 +1,277 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
-import {
-  COLORS,
-  paceScoresData,
-  quartersData,
-  subjectColors,
-  teacherBySubject,
-} from "../../constants/GradesData";
-import { styles as globalStyles, pill, pillText } from "../../constants/styles";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { subjectColors } from "../../constants/GradesData";
+import { useProfile } from "../../constants/ProfileContext";
+import { getStyles, pill, pillText } from "../../constants/styles";
 import { useTheme } from "../../constants/useTheme";
-import { PACEModal } from "./PACEModal";
+import { getStudentPace, getStudentWarnings } from "../../services/earlyWarningService";
+
+const subjectIcons = {
+  Mathematics: "calculator",
+  Science: "flask",
+  English: "book",
+  Filipino: "globe",
+  "Social Studies": "flag",
+  MAPEH: "musical-notes",
+  "Values Education": "heart",
+};
+
+function getIconForSubject(subject) {
+  for (const key of Object.keys(subjectIcons)) {
+    if (subject.toLowerCase().includes(key.toLowerCase())) return subjectIcons[key];
+  }
+  return "school";
+}
+
+function getPaceColor(colors, pacePercent) {
+  if (pacePercent >= 90) return colors.green;
+  if (pacePercent >= 75) return colors.accent;
+  if (pacePercent >= 60) return "#F59E0B";
+  return colors.red;
+}
+
+function getPaceRemarks(pacePercent) {
+  if (pacePercent >= 90) return "Excellent";
+  if (pacePercent >= 75) return "On Track";
+  if (pacePercent >= 60) return "Needs Attention";
+  return "Behind";
+}
 
 export function GradesScreen() {
   const { colors } = useTheme();
-  const [selectedQuarter, setSelectedQuarter] = useState(3);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState(null);
+  const styles = getStyles(colors);
+  const { profile } = useProfile();
 
-  const subjectIcons = [
-    "calculator",
-    "flask",
-    "book",
-    "globe",
-    "flag",
-    "musical-notes",
-    "heart",
-  ];
+  const [paceData, setPaceData] = useState([]);
+  const [warningsData, setWarningsData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const getQuarterKey = (quarterId) => `q${quarterId}`;
+  useEffect(() => {
+    if (!profile.studentId) return;
 
-  const getSelectedQuarterInfo = () => {
-    return quartersData.find((q) => q.id === selectedQuarter);
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [paces, warnings] = await Promise.all([
+          getStudentPace(profile.studentId),
+          getStudentWarnings(profile.studentId),
+        ]);
+
+        // normalize — getStudentPace returns the raw response
+        const paceList = Array.isArray(paces) ? paces : (paces?.results || []);
+        const warnList = Array.isArray(warnings) ? warnings : (warnings?.results || []);
+
+        setPaceData(paceList);
+        setWarningsData(warnList);
+      } catch (e) {
+        setError("Unable to load pace data. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [profile.studentId]);
+
+// Deduplicate pace records by subject (average if multiple)
+const paceBySubject = paceData.reduce((acc, pace) => {
+  const key = pace.subject?.toLowerCase();
+  if (!key) return acc;
+  if (!acc[key]) {
+    acc[key] = { ...pace, _count: 1 };
+  } else {
+    acc[key].pace_percent = (acc[key].pace_percent + pace.pace_percent) / 2;
+    acc[key].paces_behind = Math.max(acc[key].paces_behind, pace.paces_behind);
+    acc[key]._count += 1;
+  }
+  return acc;
+}, {});
+
+const subjectRows = Object.values(paceBySubject).map((pace) => {
+  const warning = warningsData.find(
+    (w) => w.subject?.toLowerCase() === pace.subject?.toLowerCase()
+  );
+  return {
+    subject: pace.subject,
+    pacePercent: pace.pace_percent ?? 0,
+    pacesBehind: pace.paces_behind ?? 0,
+    teacher: warning?.teacher || "—",
+    attendance: warning?.attendance ?? null,
+    trend: warning?.trend || "stable",
+    status: warning?.status || "On Track",
+    riskLevel: warning?.risk_level || "low",
+  };
+});
+
+  // Overall average pace
+  const avgPace =
+    subjectRows.length > 0
+      ? Math.round(subjectRows.reduce((sum, s) => sum + s.pacePercent, 0) / subjectRows.length)
+      : 0;
+
+  const trendIcon = {
+    improving: "arrow-up-circle",
+    declining: "arrow-down-circle",
+    stable: "remove-circle",
   };
 
-  const isQuarterLocked = () => {
-    return getSelectedQuarterInfo()?.locked ?? true;
-  };
-
-  const getQuarterScores = (subjectName, quarterId) => {
-    const quarterKey = getQuarterKey(quarterId);
-    return paceScoresData[subjectName]?.[quarterKey] || [];
-  };
-
-  const getTotalPaces = (subjectName, quarterId) => {
-    return getQuarterScores(subjectName, quarterId).length;
-  };
-
-  const getTotalScore = (subjectName, quarterId) => {
-    return getQuarterScores(subjectName, quarterId).reduce(
-      (sum, score) => sum + score,
-      0
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.accent} />
+        <Text style={{ color: colors.muted, marginTop: 12, fontSize: 14 }}>
+          Loading pace data...
+        </Text>
+      </View>
     );
-  };
+  }
 
-  const getQuarterGrade = (subjectName, quarterId) => {
-    const totalScore = getTotalScore(subjectName, quarterId);
-    const totalPaces = getTotalPaces(subjectName, quarterId);
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32, backgroundColor: colors.bg }}>
+        <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
+        <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700", marginTop: 16, textAlign: "center" }}>
+          {error}
+        </Text>
+      </View>
+    );
+  }
 
-    if (totalPaces === 0) return 0;
-    return Number((totalScore / totalPaces).toFixed(2));
-  };
-
-  const getGradeColor = (grade) => {
-    if (grade >= 90) return COLORS.green;
-    if (grade >= 85) return COLORS.blue;
-    if (grade >= 80) return COLORS.orange;
-    return COLORS.red;
-  };
-
-  const getGradeRemarks = (grade) => {
-    if (grade >= 90) return "Outstanding";
-    if (grade >= 85) return "Excellent";
-    if (grade >= 80) return "Very Good";
-    if (grade >= 75) return "Good";
-    return "Needs Improvement";
-  };
-
-  const gradesData = useMemo(() => {
-    return Object.keys(paceScoresData).map((subject) => ({
-      subject,
-      teacher: teacherBySubject[subject] || "Unknown Teacher",
-      grade: getQuarterGrade(subject, selectedQuarter),
-      totalPaces: getTotalPaces(subject, selectedQuarter),
-      totalScore: getTotalScore(subject, selectedQuarter),
-    }));
-  }, [selectedQuarter]);
-
-  const calculateTotalAverage = () => {
-    if (isQuarterLocked()) return null;
-
-    const grades = gradesData.map((item) => item.grade);
-    if (grades.length === 0) return 0;
-
-    const sum = grades.reduce((acc, grade) => acc + grade, 0);
-    return sum / grades.length;
-  };
-
-  const totalAverage = calculateTotalAverage();
-
-  const totalAverageCardColor =
-    totalAverage !== null && totalAverage < 75
-      ? COLORS.red
-      : colors.accent;
-
-  const handleSubjectPress = (subject) => {
-    if (isQuarterLocked()) return;
-
-    setSelectedSubject(subject);
-    setModalVisible(true);
-  };
+  if (subjectRows.length === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32, backgroundColor: colors.bg }}>
+        <Ionicons name="school-outline" size={48} color={colors.muted} />
+        <Text style={{ color: colors.muted, fontSize: 15, marginTop: 16, textAlign: "center" }}>
+          No pace records found for this student.
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <>
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={globalStyles.pagePad}>
-          <View style={{ marginBottom: 20 }}>
-            <Text style={[globalStyles.h1, { color: colors.text }]}>
-              Grades
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} showsVerticalScrollIndicator={false}>
+      <View style={styles.pagePad}>
+
+        {/* Header */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={styles.h1}>PACE Progress</Text>
+          <Text style={[styles.p, { color: colors.muted }]}>
+            {profile.gradeLevel || ""}
+            {profile.gradeLevel && profile.section ? " — " : ""}
+            {profile.section || ""}
+          </Text>
+        </View>
+
+        {/* Overall Average Card */}
+        <View style={[styles.card, {
+          marginBottom: 20,
+          backgroundColor: getPaceColor(colors, avgPace),
+          borderColor: getPaceColor(colors, avgPace),
+        }]}>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: "#fff", opacity: 0.85, marginBottom: 4 }}>
+            Overall PACE Completion
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 52, fontWeight: "800", color: "#fff" }}>
+              {avgPace}%
             </Text>
-            <Text style={[globalStyles.p, { color: colors.muted }]}>
-              School Year 2025–2026
+            <Text style={{ fontSize: 13, fontWeight: "600", color: "#fff", opacity: 0.85 }}>
+              {subjectRows.length} Subjects
             </Text>
           </View>
+          <Text style={{ fontSize: 13, color: "#fff", opacity: 0.85, marginTop: 4 }}>
+            {getPaceRemarks(avgPace)}
+          </Text>
+        </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 20 }}
-          >
-            {quartersData.map((q) => (
-              <TouchableOpacity
-                key={q.label}
-                onPress={() => setSelectedQuarter(q.id)}
-                style={[
-                  {
-                    paddingVertical: 8,
-                    paddingHorizontal: 18,
-                    borderRadius: 100,
-                    backgroundColor:
-                      selectedQuarter === q.id ? colors.accent : colors.card,
-                    borderWidth: 1,
-                    borderColor:
-                      selectedQuarter === q.id ? colors.accent : colors.border,
-                    marginRight: 8,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                  },
-                  q.locked && { opacity: 0.7 },
-                ]}
-              >
-                <Text
-                  style={{
-                    color:
-                      selectedQuarter === q.id ? colors.card : colors.muted,
-                    fontSize: 13,
-                    fontWeight: "700",
-                  }}
-                >
-                  {q.label}
-                </Text>
+        {/* Subject Rows */}
+        <Text style={[styles.h2, { marginBottom: 12 }]}>Subject Breakdown</Text>
 
-                {q.locked && (
-                  <Ionicons
-                    name="lock-closed"
-                    size={11}
-                    color={colors.muted}
-                  />
-                )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+        {subjectRows.map((s, index) => {
+          const color = subjectColors[s.subject] || colors.accent;
+          const paceColor = getPaceColor(colors, s.pacePercent);
+          const icon = getIconForSubject(s.subject);
+          const trend = s.trend?.toLowerCase() || "stable";
 
-          <View
-            style={[
-              globalStyles.card,
-              {
-                marginBottom: 20,
-                backgroundColor: totalAverageCardColor,
-                borderColor: totalAverageCardColor,
-              },
-            ]}
-          >
+          return (
             <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
-              }}
+              key={`${s.subject}-${index}`}
+              style={[styles.card, { marginBottom: 12 }]}
             >
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: "600",
-                  color: colors.card,
-                  opacity: 0.8,
-                }}
-              >
-                Total Average
-              </Text>
+              {/* Top row: icon + name + trend + percent */}
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                <View style={{
+                  width: 44, height: 44, borderRadius: 14,
+                  backgroundColor: `${color}22`,
+                  alignItems: "center", justifyContent: "center",
+                  marginRight: 12,
+                }}>
+                  <Ionicons name={icon} size={20} color={color} />
+                </View>
 
-              <View
-                style={[
-                  pill(colors.text),
-                  { backgroundColor: "rgba(255,255,255,0.2)" },
-                ]}
-              >
-                <Text style={[pillText(colors.text), { color: colors.card }]}>
-                  {getSelectedQuarterInfo()?.name}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>
+                    {s.subject}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
+                    {s.teacher}
+                  </Text>
+                </View>
+
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={{ fontSize: 22, fontWeight: "800", color: paceColor }}>
+                    {Math.round(s.pacePercent)}%
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                    <Ionicons
+                      name={trendIcon[trend] || "remove-circle"}
+                      size={13}
+                      color={trend === "improving" ? colors.green : trend === "declining" ? colors.red : colors.muted}
+                    />
+                    <Text style={{ fontSize: 11, color: colors.muted, textTransform: "capitalize" }}>
+                      {trend}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Progress bar */}
+              <View style={{
+                height: 8, borderRadius: 8,
+                backgroundColor: `${paceColor}22`,
+                marginBottom: 10,
+              }}>
+                <View style={{
+                  height: 8, borderRadius: 8,
+                  backgroundColor: paceColor,
+                  width: `${Math.min(100, s.pacePercent)}%`,
+                }} />
+              </View>
+
+              {/* Bottom row: badges */}
+              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                <View style={pill(paceColor)}>
+                  <Text style={pillText(paceColor)}>{s.status}</Text>
+                </View>
+                {s.pacesBehind > 0 && (
+                  <View style={pill(colors.red)}>
+                    <Text style={pillText(colors.red)}>{s.pacesBehind} pace{s.pacesBehind > 1 ? "s" : ""} behind</Text>
+                  </View>
+                )}
+                {s.attendance !== null && (
+                  <View style={pill(colors.muted)}>
+                    <Text style={pillText(colors.muted)}>Attendance: {Math.round(s.attendance)}%</Text>
+                  </View>
+                )}
               </View>
             </View>
+          );
+        })}
 
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 48,
-                  fontWeight: "800",
-                  color: colors.card,
-                }}
-              >
-                {totalAverage === null ? "--" : totalAverage.toFixed(1)}
-              </Text>
-
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: "600",
-                  color: colors.card,
-                }}
-              >
-                {gradesData.length} Subjects
-              </Text>
-            </View>
-          </View>
-
-          <View style={{ marginBottom: 10 }}>
-            <Text
-              style={[
-                globalStyles.h2,
-                { color: colors.text, marginBottom: 16 },
-              ]}
-            >
-              Subject Grades
-            </Text>
-
-            {gradesData.map((s, idx) => {
-              const locked = isQuarterLocked();
-              const color = subjectColors[s.subject] || colors.accent;
-
-              const displayGrade = locked ? "--" : s.grade;
-              const displayRemarks = locked
-                ? "Locked"
-                : getGradeRemarks(s.grade);
-
-              const badgeColor = locked ? colors.muted : getGradeColor(s.grade);
-              const gradeTextColor = locked
-                ? colors.muted
-                : getGradeColor(s.grade);
-
-              return (
-                <TouchableOpacity
-                  key={s.subject}
-                  onPress={() => handleSubjectPress(s.subject)}
-                  disabled={locked}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    style={[
-                      globalStyles.card,
-                      {
-                        marginBottom: 10,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                      },
-                      locked && { opacity: 0.7 },
-                    ]}
-                  >
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 14,
-                        backgroundColor: `${color}22`,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginRight: 14,
-                      }}
-                    >
-                      <Ionicons
-                        name={subjectIcons[idx % subjectIcons.length]}
-                        size={20}
-                        color={color}
-                      />
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: "700",
-                          color: colors.text,
-                        }}
-                      >
-                        {s.subject}
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          color: colors.muted,
-                          marginTop: 2,
-                        }}
-                      >
-                        {s.teacher}
-                      </Text>
-                    </View>
-
-                    <View style={{ alignItems: "flex-end" }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 22,
-                            fontWeight: "800",
-                            color: gradeTextColor,
-                            marginBottom: 4,
-                          }}
-                        >
-                          {displayGrade}
-                        </Text>
-
-                        <Ionicons
-                          name={locked ? "lock-closed" : "chevron-forward"}
-                          size={18}
-                          color={colors.muted}
-                          style={{ opacity: locked ? 0.5 : 0.8 }}
-                        />
-                      </View>
-
-                      <View style={pill(badgeColor)}>
-                        <Text style={pillText(badgeColor)}>
-                          {displayRemarks}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      </ScrollView>
-
-      <PACEModal
-        visible={modalVisible}
-        onClose={() => {
-          setModalVisible(false);
-          setSelectedSubject(null);
-        }}
-        subject={selectedSubject}
-        quarter={selectedQuarter}
-        paceData={selectedSubject ? paceScoresData[selectedSubject] : null}
-        averageGrade={
-          selectedSubject ? getQuarterGrade(selectedSubject, selectedQuarter) : 0
-        }
-      />
-    </>
+      </View>
+    </ScrollView>
   );
 }
