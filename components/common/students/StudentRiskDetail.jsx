@@ -83,18 +83,22 @@ const buildStudentFromApi = (paceData, warningsData, fallback) => {
     return acc;
   }, {});
 
-  const subjectsFromPace = paceRecords.map((p) => {
-    const key = (p.subject || "").toLowerCase();
-    const relatedWarning = warningBySubject[key] || {};
-    return {
-      subject: p.subject || "",
-      pacePercent: toNumber(p.pace_percent ?? p.pacePercent, 0),
-      pacesBehind: toNumber(p.paces_behind ?? p.pacesBehind, 0),
-      teacher: relatedWarning.teacher || "",
-      status: relatedWarning.status || "On Track",
-      trend: normalizeTrend(relatedWarning.trend),
-    };
-  });
+  const seenSubjects = new Set();
+  const subjectsFromPace = paceRecords.reduce((acc, p) => {
+      const key = (p.subject || "").toLowerCase();
+      if (!key || seenSubjects.has(key)) return acc;
+      seenSubjects.add(key);
+      const relatedWarning = warningBySubject[key] || {};
+      acc.push({
+        subject: p.subject || "",
+        pacePercent: toNumber(p.pace_percent ?? p.pacePercent, 0),
+        pacesBehind: toNumber(p.paces_behind ?? p.pacesBehind, 0),
+        teacher: relatedWarning.teacher || "",
+        status: relatedWarning.status || "On Track",
+        trend: normalizeTrend(relatedWarning.trend),
+      });
+      return acc;
+    }, []);
 
   const subjectsFromWarnings = warnings.map((w) => ({
     subject: w.subject || "",
@@ -500,7 +504,7 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
         Subject Breakdown
       </Text>
       <View style={{ gap: 8 }}>
-        {(s.subjects || []).map((sub) => {
+        {(s.subjects || []).map((sub, index) => {
           const subColor = subjectColors[sub.subject] || colors.accent;
           const subPaceColor =
             sub.pacePercent >= 85
@@ -516,7 +520,7 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
                 : colors.muted;
           return (
             <View
-              key={sub.subject}
+              key={`${sub.subject}-${index}`}
               style={{
                 backgroundColor: colors.card,
                 borderWidth: 1,

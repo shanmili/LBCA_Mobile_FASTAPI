@@ -179,11 +179,11 @@ export function TopHeader({ onLogout, onProfilePress }) {
                 >
                   {fullName}
                 </Text>
-                <Text
-                  style={{ fontSize: 11, color: colors.muted, marginTop: 1 }}
-                >
-                  Grade 8 – Section A
-                </Text>
+              <Text style={{ fontSize: 11, color: colors.muted, marginTop: 1 }}>
+                {profile.gradeLevel
+                  ? `${profile.gradeLevel}${profile.section ? ` – ${profile.section}` : ""}`
+                  : ""}
+              </Text>
               </View>
             </View>
 
