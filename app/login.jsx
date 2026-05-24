@@ -89,9 +89,6 @@ export default function LoginScreen() {
             <Text style={{ color: colors.muted, fontSize: 13 }}>
               Lapasan Baptist Christian Academy
             </Text>
-            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 8, textAlign: "center" }}>
-              Sign in with your student login ID. The password defaults to the same value.
-            </Text>
           </View>
 
           <View>
@@ -119,7 +116,7 @@ export default function LoginScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   onChangeText={setUsername}
-                  placeholder="your_username"
+                  placeholder="Enter your Student ID"
                   placeholderTextColor={colors.muted}
                   style={{ color: colors.text, fontSize: 15, paddingVertical: 16 }}
                   value={username}
@@ -150,7 +147,7 @@ export default function LoginScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   onChangeText={setPassword}
-                  placeholder="Optional (defaults to Student ID)"
+                  placeholder="Enter your password"
                   placeholderTextColor={colors.muted}
                   secureTextEntry
                   style={{ color: colors.text, fontSize: 15, paddingVertical: 16 }}
