@@ -247,23 +247,6 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
       contentContainerStyle={{ padding: 16 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* Back */}
-      <TouchableOpacity
-        onPress={onBack}
-        activeOpacity={0.7}
-        style={{ flexDirection: "row", alignItems: "center", marginBottom: 14 }}
-      >
-        <Ionicons
-          name="arrow-back"
-          size={18}
-          color={colors.accent}
-          style={{ marginRight: 6 }}
-        />
-        <Text style={{ fontSize: 14, fontWeight: "700", color: colors.accent }}>
-          Back to Dashboard
-        </Text>
-      </TouchableOpacity>
-
       {/* Header */}
       <Text
         style={{

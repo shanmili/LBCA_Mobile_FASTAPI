@@ -2,16 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StatusBar,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../constants/useTheme";
@@ -21,6 +21,7 @@ export default function LoginScreen() {
   const { colors, isDarkMode } = useTheme();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignIn = async () => {
@@ -123,6 +124,7 @@ export default function LoginScreen() {
                 />
               </View>
             </View>
+
             <View style={{ marginBottom: 20 }}>
               <Text
                 style={{
@@ -141,6 +143,8 @@ export default function LoginScreen() {
                   borderColor: colors.border,
                   borderRadius: 14,
                   paddingHorizontal: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
                 }}
               >
                 <TextInput
@@ -149,12 +153,29 @@ export default function LoginScreen() {
                   onChangeText={setPassword}
                   placeholder="Enter your password"
                   placeholderTextColor={colors.muted}
-                  secureTextEntry
-                  style={{ color: colors.text, fontSize: 15, paddingVertical: 16 }}
+                  secureTextEntry={!showPassword}
+                  style={{
+                    color: colors.text,
+                    fontSize: 15,
+                    paddingVertical: 16,
+                    flex: 1,
+                  }}
                   value={password}
                 />
+                <TouchableOpacity
+                  onPress={() => setShowPassword((value) => !value)}
+                  accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color={colors.muted}
+                  />
+                </TouchableOpacity>
               </View>
             </View>
+
             <TouchableOpacity
               disabled={isSubmitting}
               onPress={handleSignIn}

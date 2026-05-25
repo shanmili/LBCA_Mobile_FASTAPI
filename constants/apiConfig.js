@@ -16,14 +16,8 @@ function normalizeHost(value) {
   return host || null;
 }
 
-// Prefer an explicit Expo env override, then an explicit extra.apiBaseUrl,
-// then the runtime dev host (expo debugger/hostUri), then local fallbacks.
 const envBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 const explicitExtra = Constants.expoConfig?.extra?.apiBaseUrl;
-
-// Try to derive the device/host IP from multiple runtime locations.
-// If a hostUri/debuggerHost includes a port, normalizeHost will strip it and
-// we append the API port (8000) below so the backend address is consistent.
 const runtimeHost =
   normalizeHost(Constants.expoGoConfig?.debuggerHost) ||
   normalizeHost(Constants.manifest2?.debuggerHost) ||
@@ -37,15 +31,23 @@ export const API_BASE_URL =
   (Platform.OS === "android" && __DEV__ ? "http://10.0.2.2:8000" : null) ||
   (runtimeHost ? `http://${runtimeHost}:8000` : "http://127.0.0.1:8000");
 
+export const AI_BASE_URL = process.env.EXPO_PUBLIC_AI_BASE_URL || "";
 
 export const API_ENDPOINTS = {
   adminLogin: "/api/admin/login/",
   teacherLogin: "/api/teacher/login/",
   parentLogin: "/api/parent/login/",
   parentStudentInfo: "/api/parent/student-info/",
-
   earlyWarnings: "/api/early-warnings/",
   criticalWarnings: "/api/early-warnings/critical",
+  studentById: (studentId) => `/api/students/${studentId}`,
   studentPaceById: (studentId) => `/api/students/${studentId}/paces`,
   studentWarningsById: (studentId) => `/api/students/${studentId}/warnings`,
+  classSchedules: "/api/class-schedules/",
+  subjects: "/api/subjects/",
+  sections: "/api/sections/",
+};
+
+export const AI_ENDPOINTS = {
+  predictRisk: "/api/ai/predict-risk/",
 };

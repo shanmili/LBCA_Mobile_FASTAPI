@@ -1,29 +1,81 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { notifications } from "../../constants/data";
+import { notifications as fallbackNotifications } from "../../constants/data";
+import { useProfile } from "../../constants/ProfileContext";
 import { pill, pillText } from "../../constants/styles";
 import { useTheme } from "../../constants/useTheme";
+import { listEarlyWarnings } from "../../services/earlyWarningService";
 
 const TYPE_CONFIG = {
-  grade: { color: "#38BDF8", label: "Grade" },
   alert: { color: "#F59E0B", label: "Alert" },
+  grade: { color: "#38BDF8", label: "Grade" },
   announcement: { color: "#A78BFA", label: "Announcement" },
   schedule: { color: "#34D399", label: "Schedule" },
 };
 
+const toList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.results)) return value.results;
+  return [];
+};
+
+const buildNotificationItems = (warnings) =>
+  toList(warnings).map((warning, index) => ({
+    id: warning.id || `warning-${warning.subject || "item"}-${index}`,
+    type: "alert",
+    ionIcon: warning.risk_level ? "shield-checkmark" : "alert-circle",
+    title: warning.subject ? `${warning.subject} alert` : "Academic update",
+    body:
+      warning.message ||
+      `${warning.status || "New update"}${warning.teacher ? ` • ${warning.teacher}` : ""}`,
+    time: "Just now",
+    unread: true,
+    route: "home",
+  }));
+
 export function NotificationsTab({ onNavigate, items: initialItems }) {
   const { colors } = useTheme();
-  const [items, setItems] = useState(initialItems || notifications);
+  const { profile } = useProfile();
+  const [items, setItems] = useState(initialItems || fallbackNotifications);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadItems = async () => {
+      if (!profile.studentId) {
+        if (mounted) {
+          setItems(initialItems || fallbackNotifications);
+        }
+        return;
+      }
+
+      try {
+        const warnings = await listEarlyWarnings({ studentId: profile.studentId });
+        if (mounted) {
+          const liveItems = buildNotificationItems(warnings);
+          setItems(liveItems.length > 0 ? liveItems : initialItems || fallbackNotifications);
+        }
+      } catch {
+        if (mounted) {
+          setItems(initialItems || fallbackNotifications);
+        }
+      }
+    };
+
+    loadItems();
+
+    return () => {
+      mounted = false;
+    };
+  }, [initialItems, profile.studentId]);
+
   const unreadCount = items.filter((n) => n.unread).length;
 
-  const markAllRead = () =>
-    setItems(items.map((n) => ({ ...n, unread: false })));
+  const markAllRead = () => setItems(items.map((n) => ({ ...n, unread: false })));
 
   const handlePress = (item) => {
-    setItems(
-      items.map((n) => (n.id === item.id ? { ...n, unread: false } : n)),
-    );
+    setItems(items.map((n) => (n.id === item.id ? { ...n, unread: false } : n)));
     if (item.route && onNavigate) {
       onNavigate(item.route);
     }
@@ -32,7 +84,6 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
       <View style={{ padding: 20 }}>
-        {/* Header */}
         <View
           style={{
             flexDirection: "row",
@@ -42,7 +93,9 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
           }}
         >
           <View>
-            <Text style={{ fontSize: 22, fontWeight: "800", color: colors.text, marginBottom: 4 }}>Notifications</Text>
+            <Text style={{ fontSize: 22, fontWeight: "800", color: colors.text, marginBottom: 4 }}>
+              Notifications
+            </Text>
             <Text style={{ color: colors.muted, fontSize: 13 }}>
               {unreadCount > 0 ? `${unreadCount} unread` : "All caught up!"}
             </Text>
@@ -54,7 +107,6 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
           )}
         </View>
 
-        {/* Notification List */}
         {items.map((n) => {
           const config = TYPE_CONFIG[n.type] || TYPE_CONFIG.announcement;
           const isRoutable = !!n.route;
@@ -65,7 +117,7 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
               onPress={() => handlePress(n)}
               activeOpacity={0.75}
               style={{
-                backgroundColor: colors.card,
+                backgroundColor: n.unread ? colors.cardLight : colors.card,
                 borderRadius: 20,
                 padding: 20,
                 borderWidth: 1,
@@ -73,12 +125,10 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
                 marginBottom: 10,
                 flexDirection: "row",
                 alignItems: "flex-start",
-                backgroundColor: n.unread ? colors.cardLight : colors.card,
                 borderLeftWidth: 3,
                 borderLeftColor: n.unread ? config.color : "transparent",
               }}
             >
-              {/* Icon */}
               <View
                 style={{
                   width: 44,
@@ -94,9 +144,7 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
                 <Ionicons name={n.ionIcon} size={20} color={config.color} />
               </View>
 
-              {/* Content */}
               <View style={{ flex: 1 }}>
-                {/* Type badge + unread dot */}
                 <View
                   style={{
                     flexDirection: "row",
@@ -191,11 +239,7 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
                       >
                         View Details
                       </Text>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={12}
-                        color={colors.accent}
-                      />
+                      <Ionicons name="chevron-forward" size={12} color={colors.accent} />
                     </View>
                   )}
                 </View>
@@ -206,23 +250,19 @@ export function NotificationsTab({ onNavigate, items: initialItems }) {
 
         {items.length === 0 && (
           <View style={{ alignItems: "center", paddingVertical: 60 }}>
-            <Ionicons
-              name="notifications-off-outline"
-              size={48}
-              color={COLORS.muted}
-            />
+            <Ionicons name="notifications-off-outline" size={48} color={colors.muted} />
             <Text
               style={{
                 fontSize: 16,
                 fontWeight: "700",
-                color: COLORS.text,
+                color: colors.text,
                 marginTop: 16,
               }}
             >
               No notifications yet
             </Text>
-            <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 4 }}>
-              You're all caught up!
+            <Text style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
+              You’re all caught up!
             </Text>
           </View>
         )}

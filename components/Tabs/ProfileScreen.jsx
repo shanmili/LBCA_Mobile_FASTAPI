@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     Alert,
     Image,
@@ -23,6 +23,7 @@ function Field({
   keyboardType,
   icon,
   colors,
+  editable = true,
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -59,15 +60,16 @@ function Field({
         />
         <TextInput
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={editable ? onChangeText : undefined}
           placeholder={placeholder}
           placeholderTextColor={colors.muted}
           keyboardType={keyboardType || "default"}
+          editable={editable}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={{
             flex: 1,
-            color: colors.text,
+            color: editable ? colors.text : colors.muted,
             fontSize: 14,
             fontWeight: "500",
           }}
@@ -84,6 +86,18 @@ export function ProfileTab({ onBack }) {
   // Local draft state — only committed on Save
   const [draft, setDraft] = useState({ ...profile });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft({ ...profile });
+  }, [profile]);
+
+  const formatValue = (value) => {
+    if (typeof value !== "string") {
+      return value ?? "Not provided";
+    }
+
+    return value.trim() || "Not provided";
+  };
 
   const set = (key) => (val) => setDraft((d) => ({ ...d, [key]: val }));
 
@@ -199,39 +213,7 @@ export function ProfileTab({ onBack }) {
                   </Text>
                 )}
               </View>
-
-              {/* Camera button */}
-              <TouchableOpacity
-                onPress={pickPhoto}
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  right: 0,
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: colors.accent,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 2,
-                  borderColor: colors.bg,
-                }}
-              >
-                <Ionicons name="camera" size={15} color="#0F172A" />
-              </TouchableOpacity>
             </View>
-
-            <TouchableOpacity onPress={pickPhoto} style={{ marginTop: 12 }}>
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: "700",
-                  color: colors.accent,
-                }}
-              >
-                Change Photo
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* Form */}
@@ -253,42 +235,64 @@ export function ProfileTab({ onBack }) {
                 marginBottom: 16,
               }}
             >
-              Personal Information
+              Student Information
             </Text>
 
             <Field
               label="First Name"
-              value={draft.firstName}
-              onChangeText={set("firstName")}
-              placeholder="Enter first name"
+              value={formatValue(draft.firstName)}
+              placeholder="First name"
               icon="person-outline"
               colors={colors}
+              editable={false}
+            />
+            <Field
+              label="Middle Name"
+              value={formatValue(draft.middleName)}
+              placeholder="Middle name"
+              icon="person-outline"
+              colors={colors}
+              editable={false}
             />
             <Field
               label="Last Name"
-              value={draft.lastName}
-              onChangeText={set("lastName")}
-              placeholder="Enter last name"
+              value={formatValue(draft.lastName)}
+              placeholder="Last name"
               icon="person-outline"
               colors={colors}
+              editable={false}
             />
             <Field
-              label="Phone Number"
-              value={draft.phone}
-              onChangeText={set("phone")}
-              placeholder="+63 9XX XXX XXXX"
-              keyboardType="phone-pad"
-              icon="call-outline"
+              label="Birthdate"
+              value={formatValue(draft.birthdate)}
+              placeholder="Birthdate"
+              icon="calendar-outline"
               colors={colors}
+              editable={false}
             />
             <Field
-              label="Email Address"
-              value={draft.email}
-              onChangeText={set("email")}
-              placeholder="you@example.com"
-              keyboardType="email-address"
-              icon="mail-outline"
+              label="Gender"
+              value={formatValue(draft.gender)}
+              placeholder="Gender"
+              icon="male-female-outline"
               colors={colors}
+              editable={false}
+            />
+            <Field
+              label="Grade Level"
+              value={formatValue(draft.gradeLevel)}
+              placeholder="Grade level"
+              icon="school-outline"
+              colors={colors}
+              editable={false}
+            />
+            <Field
+              label="Section"
+              value={formatValue(draft.section)}
+              placeholder="Section"
+              icon="people-outline"
+              colors={colors}
+              editable={false}
             />
           </View>
 
@@ -310,22 +314,55 @@ export function ProfileTab({ onBack }) {
                 marginBottom: 16,
               }}
             >
-              Additional Details
+              Other Details
             </Text>
 
             <Field
               label="Home Address"
-              value={draft.address}
+              value={formatValue(draft.address)}
               onChangeText={set("address")}
               placeholder="House / Street / Barangay"
               icon="location-outline"
               colors={colors}
             />
             <Field
-              label="Guardian Name"
-              value={draft.guardianName}
-              onChangeText={set("guardianName")}
-              placeholder="Enter guardian name"
+              label="Guardian First Name"
+              value={formatValue(draft.guardianFirstName)}
+              onChangeText={set("guardianFirstName")}
+              placeholder="Enter guardian first name"
+              icon="person-outline"
+              colors={colors}
+            />
+            <Field
+              label="Guardian Middle Name"
+              value={formatValue(draft.guardianMiddleName)}
+              onChangeText={set("guardianMiddleName")}
+              placeholder="Enter guardian middle name"
+              icon="person-outline"
+              colors={colors}
+            />
+            <Field
+              label="Guardian Last Name"
+              value={formatValue(draft.guardianLastName)}
+              onChangeText={set("guardianLastName")}
+              placeholder="Enter guardian last name"
+              icon="person-outline"
+              colors={colors}
+            />
+            <Field
+              label="Guardian Contact"
+              value={formatValue(draft.guardianContact)}
+              onChangeText={set("guardianContact")}
+              placeholder="Enter guardian contact"
+              keyboardType="phone-pad"
+              icon="call-outline"
+              colors={colors}
+            />
+            <Field
+              label="Guardian Relationship"
+              value={formatValue(draft.guardianRelationship)}
+              onChangeText={set("guardianRelationship")}
+              placeholder="Enter guardian relationship"
               icon="people-outline"
               colors={colors}
             />
@@ -353,18 +390,6 @@ export function ProfileTab({ onBack }) {
             </Text>
           </TouchableOpacity>
 
-          {/* Info note */}
-          <Text
-            style={{
-              fontSize: 11,
-              color: colors.muted,
-              textAlign: "center",
-              marginTop: 8,
-              marginBottom: 20,
-            }}
-          >
-            Changes are saved locally on this device.
-          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

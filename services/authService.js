@@ -1,4 +1,4 @@
-import { API_BASE_URL, API_ENDPOINTS } from "../constants/apiConfig";
+import { API_ENDPOINTS } from "../constants/apiConfig";
 import { apiClient } from "./apiClient";
 import { clearAuthTokens, saveAuthSession, saveAuthTokens } from "./authToken";
 
@@ -66,5 +66,10 @@ export async function signOut() {
 
 export async function getLoggedParentStudentInfo() {
   const response = await apiClient.get(API_ENDPOINTS.parentStudentInfo);
+  return response.data;
+}
+
+export async function getStudentById(studentId) {
+  const response = await apiClient.get(API_ENDPOINTS.studentById(studentId));
   return response.data;
 }
