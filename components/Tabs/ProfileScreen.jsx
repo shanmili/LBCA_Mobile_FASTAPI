@@ -2,18 +2,26 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import {
-    Alert,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { API_ENDPOINTS } from "../../constants/apiConfig";
 import { useProfile } from "../../constants/ProfileContext";
 import { useTheme } from "../../constants/useTheme";
+import { apiClient } from "../../services/apiClient";
+
+// Only used for READ-ONLY display fields, never for editable TextInput values
+function displayValue(value) {
+  if (typeof value !== "string") return value ?? "Not provided";
+  return value.trim() || "Not provided";
+}
 
 function Field({
   label,
@@ -91,14 +99,6 @@ export function ProfileTab({ onBack }) {
     setDraft({ ...profile });
   }, [profile]);
 
-  const formatValue = (value) => {
-    if (typeof value !== "string") {
-      return value ?? "Not provided";
-    }
-
-    return value.trim() || "Not provided";
-  };
-
   const set = (key) => (val) => setDraft((d) => ({ ...d, [key]: val }));
 
   const pickPhoto = async () => {
@@ -121,17 +121,30 @@ export function ProfileTab({ onBack }) {
     }
   };
 
-  const handleSave = () => {
-    if (!draft.firstName.trim() || !draft.lastName.trim()) {
+  const handleSave = async () => {
+    if (!draft.firstName?.trim() || !draft.lastName?.trim()) {
       Alert.alert("Required", "First and last name cannot be empty.");
       return;
     }
     setSaving(true);
-    setTimeout(() => {
+    try {
+      await apiClient.patch(API_ENDPOINTS.updateStudent(draft.studentId), {
+        address: draft.address || null,
+        guardian_first_name: draft.guardianFirstName || null,
+        guardian_mid_name: draft.guardianMiddleName || null,
+        guardian_last_name: draft.guardianLastName || null,
+        guardian_contact: draft.guardianContact || null,
+        guardian_relationship: draft.guardianRelationship || null,
+      });
       updateProfile(draft);
-      setSaving(false);
       Alert.alert("Saved!", "Your profile has been updated.");
-    }, 600);
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail || e?.message || "Something went wrong.";
+      Alert.alert("Error", msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const initials =
@@ -240,7 +253,7 @@ export function ProfileTab({ onBack }) {
 
             <Field
               label="First Name"
-              value={formatValue(draft.firstName)}
+              value={displayValue(draft.firstName)}
               placeholder="First name"
               icon="person-outline"
               colors={colors}
@@ -248,7 +261,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Middle Name"
-              value={formatValue(draft.middleName)}
+              value={displayValue(draft.middleName)}
               placeholder="Middle name"
               icon="person-outline"
               colors={colors}
@@ -256,7 +269,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Last Name"
-              value={formatValue(draft.lastName)}
+              value={displayValue(draft.lastName)}
               placeholder="Last name"
               icon="person-outline"
               colors={colors}
@@ -264,7 +277,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Birthdate"
-              value={formatValue(draft.birthdate)}
+              value={displayValue(draft.birthdate)}
               placeholder="Birthdate"
               icon="calendar-outline"
               colors={colors}
@@ -272,7 +285,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Gender"
-              value={formatValue(draft.gender)}
+              value={displayValue(draft.gender)}
               placeholder="Gender"
               icon="male-female-outline"
               colors={colors}
@@ -280,7 +293,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Grade Level"
-              value={formatValue(draft.gradeLevel)}
+              value={displayValue(draft.gradeLevel)}
               placeholder="Grade level"
               icon="school-outline"
               colors={colors}
@@ -288,7 +301,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Section"
-              value={formatValue(draft.section)}
+              value={displayValue(draft.section)}
               placeholder="Section"
               icon="people-outline"
               colors={colors}
@@ -319,7 +332,7 @@ export function ProfileTab({ onBack }) {
 
             <Field
               label="Home Address"
-              value={formatValue(draft.address)}
+              value={draft.address ?? ""}
               onChangeText={set("address")}
               placeholder="House / Street / Barangay"
               icon="location-outline"
@@ -327,7 +340,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Guardian First Name"
-              value={formatValue(draft.guardianFirstName)}
+              value={draft.guardianFirstName ?? ""}
               onChangeText={set("guardianFirstName")}
               placeholder="Enter guardian first name"
               icon="person-outline"
@@ -335,7 +348,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Guardian Middle Name"
-              value={formatValue(draft.guardianMiddleName)}
+              value={draft.guardianMiddleName ?? ""}
               onChangeText={set("guardianMiddleName")}
               placeholder="Enter guardian middle name"
               icon="person-outline"
@@ -343,7 +356,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Guardian Last Name"
-              value={formatValue(draft.guardianLastName)}
+              value={draft.guardianLastName ?? ""}
               onChangeText={set("guardianLastName")}
               placeholder="Enter guardian last name"
               icon="person-outline"
@@ -351,7 +364,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Guardian Contact"
-              value={formatValue(draft.guardianContact)}
+              value={draft.guardianContact ?? ""}
               onChangeText={set("guardianContact")}
               placeholder="Enter guardian contact"
               keyboardType="phone-pad"
@@ -360,7 +373,7 @@ export function ProfileTab({ onBack }) {
             />
             <Field
               label="Guardian Relationship"
-              value={formatValue(draft.guardianRelationship)}
+              value={draft.guardianRelationship ?? ""}
               onChangeText={set("guardianRelationship")}
               placeholder="Enter guardian relationship"
               icon="people-outline"
@@ -389,7 +402,6 @@ export function ProfileTab({ onBack }) {
               {saving ? "Saving..." : "Save Changes"}
             </Text>
           </TouchableOpacity>
-
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

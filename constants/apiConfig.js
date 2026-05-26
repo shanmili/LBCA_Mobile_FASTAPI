@@ -23,7 +23,9 @@ const runtimeHost =
   normalizeHost(Constants.manifest2?.debuggerHost) ||
   normalizeHost(Constants.manifest?.debuggerHost) ||
   normalizeHost(Constants.expoConfig?.hostUri) ||
-  (Platform.OS === "web" && typeof window !== "undefined" ? window.location.hostname : null);
+  (Platform.OS === "web" && typeof window !== "undefined"
+    ? window.location.hostname
+    : null);
 
 export const API_BASE_URL =
   envBaseUrl ||
@@ -41,6 +43,7 @@ export const API_ENDPOINTS = {
   earlyWarnings: "/api/early-warnings/",
   criticalWarnings: "/api/early-warnings/critical",
   studentById: (studentId) => `/api/students/${studentId}`,
+  updateStudent: (studentId) => `/api/students/${studentId}`,
   studentPaceById: (studentId) => `/api/students/${studentId}/paces`,
   studentWarningsById: (studentId) => `/api/students/${studentId}/warnings`,
   classSchedules: "/api/class-schedules/",
