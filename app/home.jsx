@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, StatusBar } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import LoadingScreen from "../components/common/LoadingScreen";
@@ -12,10 +12,14 @@ import { GradesScreen } from "../components/Tabs/GradesScreen";
 import { NotificationsTab } from "../components/Tabs/NotificationsScreen";
 import { ProfileTab } from "../components/Tabs/ProfileScreen";
 import { ScheduleTab } from "../components/Tabs/ScheduleScreen";
-import { notifications } from "../constants/data";
 import { ProfileProvider, useProfile } from "../constants/ProfileContext";
 import { useTheme } from "../constants/useTheme";
 import { signOut } from "../services/authService";
+import {
+  getStudentPace,
+  listEarlyWarnings,
+} from "../services/earlyWarningService";
+import { computeUnreadCount, markAllRead } from "../services/notificationStore";
 
 function HomeScreenInner() {
   const { colors, isDarkMode } = useTheme();
@@ -24,14 +28,60 @@ function HomeScreenInner() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [prevTab, setPrevTab] = useState("home");
-  const [unreadCount, setUnreadCount] = useState(
-    notifications.filter((n) => n.unread).length,
-  );
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Keep the latest raw API data so markAllRead can snapshot when the tab opens
+  const latestPaceRef = useRef([]);
+  const latestWarningsRef = useRef([]);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 1800);
     return () => clearTimeout(timer);
   }, []);
+
+  // Compute badge count using change-detection (not raw warning count)
+  useEffect(() => {
+    if (!profile.studentId) return;
+    let cancelled = false;
+
+    async function fetchAndCount() {
+      try {
+        const [warnings, paces] = await Promise.all([
+          listEarlyWarnings({ studentId: profile.studentId }),
+          getStudentPace(profile.studentId).catch(() => []),
+        ]);
+        if (cancelled) return;
+
+        latestWarningsRef.current = Array.isArray(warnings) ? warnings : [];
+        latestPaceRef.current = Array.isArray(paces) ? paces : [];
+
+        const { unreadCount: count } = await computeUnreadCount(
+          profile.studentId,
+          latestPaceRef.current,
+          latestWarningsRef.current,
+        );
+        if (!cancelled) setUnreadCount(count);
+      } catch {
+        if (!cancelled) setUnreadCount(0);
+      }
+    }
+
+    fetchAndCount();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.studentId]);
+
+  // Called when the user opens the notifications tab (tab bar or dashboard button)
+  const handleOpenNotif = async () => {
+    setTab("notif");
+    setUnreadCount(0);
+    await markAllRead(
+      profile.studentId,
+      latestPaceRef.current,
+      latestWarningsRef.current,
+    );
+  };
 
   const studentName = profile.firstName
     ? `${profile.firstName} ${profile.lastName}`.trim()
@@ -39,7 +89,9 @@ function HomeScreenInner() {
 
   const studentMeta =
     profile.gradeLevel || profile.section
-      ? `${profile.gradeLevel || ""}${profile.gradeLevel && profile.section ? " - " : ""}${profile.section || ""}`
+      ? `${profile.gradeLevel || ""}${
+          profile.gradeLevel && profile.section ? " - " : ""
+        }${profile.section || ""}`
       : null;
 
   const renderContent = () => {
@@ -47,7 +99,7 @@ function HomeScreenInner() {
       return (
         <DashboardTab
           unreadCount={unreadCount}
-          onNotifPress={() => setTab("notif")}
+          onNotifPress={handleOpenNotif}
           onRiskPress={() => setTab("alert")}
           studentName={studentName}
           studentMeta={studentMeta}
@@ -76,15 +128,21 @@ function HomeScreenInner() {
     }
     if (activeTab === "grades") return <GradesScreen />;
     if (activeTab === "sched") return <ScheduleTab />;
-    if (activeTab === "notif") return <NotificationsTab onNavigate={(route) => {
-      setTab(route);
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-    }} />;
-    if (activeTab === "profile") return <ProfileTab onBack={() => setTab(prevTab)} />;
+    if (activeTab === "notif")
+      return (
+        <NotificationsTab
+          onNavigate={(route) => setTab(route)}
+          onReadOne={(notifId) => setUnreadCount((c) => Math.max(0, c - 1))}
+        />
+      );
+    if (activeTab === "profile")
+      return <ProfileTab onBack={() => setTab(prevTab)} />;
     return <UnderMaintenance />;
   };
 
-  const selfScrolling = ["notif", "profile", "grades"].includes(activeTab);
+  const selfScrolling = ["notif", "profile", "grades", "home"].includes(
+    activeTab,
+  );
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -92,14 +150,19 @@ function HomeScreenInner() {
     setTimeout(() => router.replace("/login"), 1800);
   };
 
-  if (isLoggingOut) return <LoadingScreen message="See you soon!" variant="logout" />;
-  if (isLoading || profileLoading) return <LoadingScreen message="Preparing your dashboard..." />;
+  if (isLoggingOut)
+    return <LoadingScreen message="See you soon!" variant="logout" />;
+  if (isLoading || profileLoading)
+    return <LoadingScreen message="Preparing your dashboard..." />;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
       <TopHeader
-        onProfilePress={() => { setPrevTab(activeTab); setTab("profile"); }}
+        onProfilePress={() => {
+          setPrevTab(activeTab);
+          setTab("profile");
+        }}
         onLogout={handleLogout}
       />
       {selfScrolling ? (
@@ -112,7 +175,13 @@ function HomeScreenInner() {
       {activeTab !== "profile" && (
         <BottomTabBar
           activeTab={activeTab}
-          onTabChange={setTab}
+          onTabChange={(tab) => {
+            if (tab === "notif") {
+              handleOpenNotif();
+            } else {
+              setTab(tab);
+            }
+          }}
           unreadCount={unreadCount}
         />
       )}

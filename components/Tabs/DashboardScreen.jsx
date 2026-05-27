@@ -32,10 +32,23 @@ const normalizeRisk = (v) => {
   return "low";
 };
 
-const normalizeTrend = (v) => {
-  const s = String(v || "").toLowerCase();
-  if (s.includes("improv")) return "improving";
-  if (s.includes("declin")) return "declining";
+// Derive risk from pace percentage so grade changes are immediately reflected
+const riskFromPct = (pct) => {
+  if (pct < 60) return "critical";
+  if (pct < 75) return "high";
+  if (pct < 85) return "moderate";
+  return "low";
+};
+
+// Derive trend from live pace_percent rather than trusting the stale DB field.
+// "improving" is only shown when pace is genuinely healthy AND the API confirms it.
+// At-risk/critical subjects are always declining unless pace >= 85 and API says improving.
+const trendFromPct = (pct, apiTrend) => {
+  const n = Number(pct);
+  const api = String(apiTrend || "").toLowerCase();
+  if (!Number.isFinite(n)) return "stable";
+  if (n >= 85 && api.includes("improv")) return "improving";
+  if (n < 85) return "declining";
   return "stable";
 };
 
@@ -55,7 +68,7 @@ const getRiskConfig = (level) =>
     critical: {
       label: "Critical",
       color: "#F87171",
-      icon: "skull-outline",
+      icon: "warning-circle-outline",
       bg: "#F8717118",
     },
     high: {
@@ -122,8 +135,13 @@ function buildDashboard(paceRaw, warningsRaw) {
       pacesBehind: toNum(p.paces_behind, toNum(w.paces_behind, 0)),
       teacher: w.teacher || p.teacher || "—",
       status: w.status || p.status || "On Track",
-      trend: normalizeTrend(w.trend || p.trend),
-      riskLevel: normalizeRisk(w.risk_level),
+      trend: trendFromPct(
+        Math.round(toNum(p.pace_percent) / Math.max(1, p._count)),
+        w.trend || p.trend,
+      ),
+      riskLevel: riskFromPct(
+        Math.round(toNum(p.pace_percent) / Math.max(1, p._count)),
+      ),
       color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
     };
   });
@@ -138,8 +156,8 @@ function buildDashboard(paceRaw, warningsRaw) {
         pacesBehind: toNum(w.paces_behind ?? w.pacesBehind, 0),
         teacher: w.teacher || "—",
         status: w.status || "On Track",
-        trend: normalizeTrend(w.trend),
-        riskLevel: normalizeRisk(w.risk_level),
+        trend: trendFromPct(toNum(w.pace_percent ?? w.pacePercent, 0), w.trend),
+        riskLevel: riskFromPct(toNum(w.pace_percent ?? w.pacePercent, 0)),
         color: SUBJECT_PALETTE[subjects.length % SUBJECT_PALETTE.length],
       });
     }
@@ -159,7 +177,9 @@ function buildDashboard(paceRaw, warningsRaw) {
         ? s.riskLevel
         : worst;
     },
-    warnings[0]?.risk_level ? normalizeRisk(warnings[0].risk_level) : "low",
+    warnings[0]?.pace_percent != null
+      ? riskFromPct(toNum(warnings[0].pace_percent))
+      : "low",
   );
 
   // Overall trend
@@ -314,6 +334,7 @@ function SubjectRow({
   color,
   index,
 }) {
+  const { colors } = useTheme();
   const trendIcon =
     trend === "improving"
       ? "trending-up"
@@ -331,97 +352,111 @@ function SubjectRow({
   return (
     <View
       style={{
-        marginBottom: 14,
-        backgroundColor: "#ffffff08",
-        borderRadius: 14,
-        padding: 14,
+        marginBottom: 10,
+        backgroundColor: colors.card,
+        borderRadius: 20,
+        padding: 20,
         borderWidth: 1,
-        borderColor: `${color}20`,
+        borderColor: colors.border,
+        borderLeftWidth: 3,
+        borderLeftColor: riskConf.color,
+        flexDirection: "row",
+        alignItems: "flex-start",
       }}
     >
-      {/* subject name + trend icon */}
+      {/* Icon */}
       <View
         style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          backgroundColor: `${riskConf.color}22`,
           alignItems: "center",
-          marginBottom: 10,
+          justifyContent: "center",
+          marginRight: 14,
+          flexShrink: 0,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          <View
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: color,
-              marginRight: 8,
-            }}
-          />
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: "700",
-              color: "#F1F5F9",
-              flex: 1,
-            }}
-            numberOfLines={1}
-          >
-            {subject}
-          </Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Ionicons name={trendIcon} size={13} color={trendColor} />
-          <Text style={{ fontSize: 12, fontWeight: "800", color }}>
-            {pacePercent}%
-          </Text>
-        </View>
+        <Ionicons name={riskConf.icon} size={20} color={riskConf.color} />
       </View>
 
-      {/* progress bar */}
-      <ProgressBar value={pacePercent} color={color} delay={index * 80} />
-
-      {/* meta row */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          marginTop: 8,
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ fontSize: 11, color: "#94A3B8" }} numberOfLines={1}>
-          {teacher !== "—" ? `👤 ${teacher}` : ""}
-        </Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          {pacesBehind > 0 && (
-            <View
-              style={{
-                backgroundColor: "#F8717118",
-                borderRadius: 6,
-                paddingHorizontal: 6,
-                paddingVertical: 2,
-              }}
-            >
-              <Text
-                style={{ fontSize: 10, fontWeight: "700", color: "#F87171" }}
-              >
-                {pacesBehind} behind
-              </Text>
-            </View>
-          )}
+      <View style={{ flex: 1 }}>
+        {/* Risk badge */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 4,
+            gap: 6,
+          }}
+        >
           <View
             style={{
-              backgroundColor: riskConf.bg,
-              borderRadius: 6,
-              paddingHorizontal: 6,
+              backgroundColor: `${riskConf.color}22`,
+              borderRadius: 100,
+              paddingHorizontal: 8,
               paddingVertical: 2,
             }}
           >
             <Text
-              style={{ fontSize: 10, fontWeight: "700", color: riskConf.color }}
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                color: riskConf.color,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}
             >
               {riskConf.label}
+            </Text>
+          </View>
+        </View>
+
+        {/* Subject name */}
+        <Text
+          style={{
+            fontSize: 14,
+            fontWeight: "700",
+            color: colors.text,
+            marginBottom: 4,
+          }}
+          numberOfLines={1}
+        >
+          {subject}
+        </Text>
+
+        {/* Progress bar */}
+        <ProgressBar
+          value={pacePercent}
+          color={riskConf.color}
+          delay={index * 80}
+        />
+
+        {/* Footer: pace % + trend */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 8,
+          }}
+        >
+          <Text
+            style={{ fontSize: 11, color: colors.muted, fontWeight: "600" }}
+          >
+            {pacePercent}% pace
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Ionicons name={trendIcon} size={12} color={trendColor} />
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "600",
+                color: trendColor,
+                textTransform: "capitalize",
+              }}
+            >
+              {trend}
             </Text>
           </View>
         </View>
@@ -511,6 +546,7 @@ function PaceRing({ value, color, size = 120 }) {
 
 // ─── Section header ──────────────────────────────────────────────────────────
 function SectionHeader({ title, subtitle }) {
+  const { colors } = useTheme();
   return (
     <View
       style={{
@@ -524,7 +560,7 @@ function SectionHeader({ title, subtitle }) {
         style={{
           fontSize: 13,
           fontWeight: "800",
-          color: "#F1F5F9",
+          color: colors.text,
           textTransform: "uppercase",
           letterSpacing: 0.8,
         }}
@@ -532,7 +568,7 @@ function SectionHeader({ title, subtitle }) {
         {title}
       </Text>
       {subtitle ? (
-        <Text style={{ fontSize: 11, color: "#94A3B8" }}>{subtitle}</Text>
+        <Text style={{ fontSize: 11, color: colors.muted }}>{subtitle}</Text>
       ) : null}
     </View>
   );
@@ -691,7 +727,7 @@ export function DashboardTab({ unreadCount, onNotifPress, onRiskPress }) {
               style={{
                 fontSize: 11,
                 fontWeight: "600",
-                color: "#94A3B8",
+                color: colors.subtext || "#94A3B8",
                 letterSpacing: 1.5,
                 textTransform: "uppercase",
                 marginBottom: 4,
@@ -703,7 +739,7 @@ export function DashboardTab({ unreadCount, onNotifPress, onRiskPress }) {
               style={{
                 fontSize: 24,
                 fontWeight: "800",
-                color: "#F1F5F9",
+                color: colors.text,
                 letterSpacing: -0.5,
                 lineHeight: 30,
               }}
@@ -888,13 +924,6 @@ export function DashboardTab({ unreadCount, onNotifPress, onRiskPress }) {
             color={colors.accent}
           />
           <StatPill
-            icon="alert-circle-outline"
-            label="Behind"
-            value={state?.totalBehind || 0}
-            color={state?.totalBehind > 0 ? "#F87171" : "#34D399"}
-            onPress={onRiskPress}
-          />
-          <StatPill
             icon={riskConf.icon}
             label="Status"
             value={riskConf.label}
@@ -966,7 +995,7 @@ export function DashboardTab({ unreadCount, onNotifPress, onRiskPress }) {
               No subjects yet
             </Text>
             <Text
-              style={{ fontSize: 12, color: "#64748B", textAlign: "center" }}
+              style={{ fontSize: 12, color: colors.muted, textAlign: "center" }}
             >
               Academic data will appear here once your enrollment is processed.
             </Text>
@@ -975,7 +1004,7 @@ export function DashboardTab({ unreadCount, onNotifPress, onRiskPress }) {
 
         {/* ── Pull to refresh hint ── */}
         <View style={{ alignItems: "center", marginTop: 16 }}>
-          <Text style={{ fontSize: 11, color: "#475569" }}>
+          <Text style={{ fontSize: 11, color: colors.muted }}>
             Pull down to refresh
           </Text>
         </View>

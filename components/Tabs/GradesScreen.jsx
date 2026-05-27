@@ -1,277 +1,551 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { subjectColors } from "../../constants/GradesData";
+import { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { useProfile } from "../../constants/ProfileContext";
-import { getStyles, pill, pillText } from "../../constants/styles";
 import { useTheme } from "../../constants/useTheme";
-import { getStudentPace, getStudentWarnings } from "../../services/earlyWarningService";
+import {
+  getStudentPace,
+  getStudentWarnings,
+} from "../../services/earlyWarningService";
 
-const subjectIcons = {
-  Mathematics: "calculator",
-  Science: "flask",
-  English: "book",
-  Filipino: "globe",
-  "Social Studies": "flag",
-  MAPEH: "musical-notes",
-  "Values Education": "heart",
+// ─── helpers ─────────────────────────────────────────────────────────────────
+const SUBJECT_ICONS = {
+  math: "calculator",
+  science: "flask",
+  english: "book",
+  filipino: "globe",
+  social: "flag",
+  mapeh: "musical-notes",
+  values: "heart",
+  araling: "flag",
 };
 
-function getIconForSubject(subject) {
-  for (const key of Object.keys(subjectIcons)) {
-    if (subject.toLowerCase().includes(key.toLowerCase())) return subjectIcons[key];
+function iconFor(subject) {
+  const s = subject.toLowerCase();
+  for (const [k, v] of Object.entries(SUBJECT_ICONS)) {
+    if (s.includes(k)) return v;
   }
   return "school";
 }
 
-function getPaceColor(colors, pacePercent) {
-  if (pacePercent >= 90) return colors.green;
-  if (pacePercent >= 75) return colors.accent;
-  if (pacePercent >= 60) return "#F59E0B";
-  return colors.red;
+const SUBJECT_PALETTE = [
+  "#38BDF8",
+  "#34D399",
+  "#A78BFA",
+  "#FBBF24",
+  "#F87171",
+  "#FB923C",
+  "#E879F9",
+  "#2DD4BF",
+];
+
+function gradeColor(pct) {
+  if (pct >= 90) return "#34D399";
+  if (pct >= 75) return "#38BDF8";
+  if (pct >= 60) return "#FBBF24";
+  return "#F87171";
 }
 
-function getPaceRemarks(pacePercent) {
-  if (pacePercent >= 90) return "Excellent";
-  if (pacePercent >= 75) return "On Track";
-  if (pacePercent >= 60) return "Needs Attention";
-  return "Behind";
+function gradeRemarks(pct) {
+  if (pct >= 90) return "Excellent";
+  if (pct >= 75) return "Satisfactory";
+  if (pct >= 60) return "Needs Improvement";
+  return "Poor";
 }
 
+// ─── Animated progress bar ───────────────────────────────────────────────────
+function Bar({ value, color, delay = 0 }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: Math.min(100, Math.max(0, value)),
+      duration: 900,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [value]);
+  return (
+    <View
+      style={{
+        height: 7,
+        backgroundColor: `${color}25`,
+        borderRadius: 99,
+        overflow: "hidden",
+      }}
+    >
+      <Animated.View
+        style={{
+          height: "100%",
+          borderRadius: 99,
+          backgroundColor: color,
+          width: anim.interpolate({
+            inputRange: [0, 100],
+            outputRange: ["0%", "100%"],
+          }),
+        }}
+      />
+    </View>
+  );
+}
+
+// ─── Skeleton ────────────────────────────────────────────────────────────────
+function Skeleton({ width, height, radius = 10, style }) {
+  const pulse = useRef(new Animated.Value(0.35)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 0.9,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.35,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, []);
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          borderRadius: radius,
+          backgroundColor: "#94A3B822",
+          opacity: pulse,
+        },
+        style,
+      ]}
+    />
+  );
+}
+
+// ─── Subject grade card ───────────────────────────────────────────────────────
+function SubjectCard({ subject, pacePercent, teacher, trend, color, index }) {
+  const { colors } = useTheme();
+  const grade = Math.round(pacePercent);
+  const gColor = gradeColor(grade);
+  const remarks = gradeRemarks(grade);
+  const icon = iconFor(subject);
+
+  const trendIcon =
+    trend === "improving"
+      ? "trending-up"
+      : trend === "declining"
+        ? "trending-down"
+        : "remove";
+  const trendColor =
+    trend === "improving"
+      ? "#34D399"
+      : trend === "declining"
+        ? "#F87171"
+        : "#94A3B8";
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.card,
+        borderRadius: 20,
+        padding: 20,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderLeftWidth: 3,
+        borderLeftColor: gColor,
+        flexDirection: "row",
+        alignItems: "flex-start",
+      }}
+    >
+      {/* Icon */}
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          backgroundColor: `${gColor}22`,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: 14,
+          flexShrink: 0,
+        }}
+      >
+        <Ionicons name={icon} size={20} color={gColor} />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        {/* Remarks badge */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 4,
+            gap: 6,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: `${gColor}22`,
+              borderRadius: 100,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                color: gColor,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}
+            >
+              {remarks}
+            </Text>
+          </View>
+        </View>
+
+        {/* Subject name */}
+        <Text
+          style={{
+            fontSize: 14,
+            fontWeight: "700",
+            color: colors.text,
+            marginBottom: 4,
+          }}
+          numberOfLines={1}
+        >
+          {subject}
+        </Text>
+
+        {/* Progress bar */}
+        <Bar value={grade} color={gColor} delay={index * 70} />
+
+        {/* Footer: grade + trend */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 8,
+          }}
+        >
+          <Text
+            style={{ fontSize: 11, color: colors.muted, fontWeight: "600" }}
+          >
+            {grade}% grade
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Ionicons name={trendIcon} size={12} color={trendColor} />
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "600",
+                color: trendColor,
+                textTransform: "capitalize",
+              }}
+            >
+              {trend}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── Main ────────────────────────────────────────────────────────────────────
 export function GradesScreen() {
   const { colors } = useTheme();
-  const styles = getStyles(colors);
   const { profile } = useProfile();
 
-  const [paceData, setPaceData] = useState([]);
-  const [warningsData, setWarningsData] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const load = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+
+    if (!profile.studentId) {
+      setSubjects([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
+      const [paces, warnings] = await Promise.all([
+        getStudentPace(profile.studentId),
+        getStudentWarnings(profile.studentId),
+      ]);
+
+      const paceList = Array.isArray(paces) ? paces : paces?.results || [];
+      const warnList = Array.isArray(warnings)
+        ? warnings
+        : warnings?.results || [];
+
+      // Deduplicate by subject — average pace_percent if multiple records
+      const map = new Map();
+      paceList.forEach((p) => {
+        const key = p.subject?.toLowerCase();
+        if (!key) return;
+        const prev = map.get(key);
+        if (!prev) {
+          map.set(key, { ...p, _count: 1 });
+        } else {
+          map.set(key, {
+            ...prev,
+            pace_percent: prev.pace_percent + p.pace_percent,
+            _count: prev._count + 1,
+          });
+        }
+      });
+
+      const rows = Array.from(map.values()).map((p, i) => {
+        const warn = warnList.find(
+          (w) => w.subject?.toLowerCase() === p.subject?.toLowerCase(),
+        );
+        return {
+          subject: p.subject,
+          pacePercent: p.pace_percent / p._count,
+          teacher: warn?.teacher || p.teacher || "—",
+          trend: warn?.trend || "stable",
+          color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
+        };
+      });
+
+      setSubjects(rows);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 450,
+        useNativeDriver: true,
+      }).start();
+    } catch {
+      setError("Unable to load grades. Pull down to retry.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    if (!profile.studentId) return;
-
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [paces, warnings] = await Promise.all([
-          getStudentPace(profile.studentId),
-          getStudentWarnings(profile.studentId),
-        ]);
-
-        // normalize — getStudentPace returns the raw response
-        const paceList = Array.isArray(paces) ? paces : (paces?.results || []);
-        const warnList = Array.isArray(warnings) ? warnings : (warnings?.results || []);
-
-        setPaceData(paceList);
-        setWarningsData(warnList);
-      } catch (e) {
-        setError("Unable to load pace data. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    load();
   }, [profile.studentId]);
 
-// Deduplicate pace records by subject (average if multiple)
-const paceBySubject = paceData.reduce((acc, pace) => {
-  const key = pace.subject?.toLowerCase();
-  if (!key) return acc;
-  if (!acc[key]) {
-    acc[key] = { ...pace, _count: 1 };
-  } else {
-    acc[key].pace_percent = (acc[key].pace_percent + pace.pace_percent) / 2;
-    acc[key].paces_behind = Math.max(acc[key].paces_behind, pace.paces_behind);
-    acc[key]._count += 1;
-  }
-  return acc;
-}, {});
+  const avgGrade = subjects.length
+    ? Math.round(
+        subjects.reduce((s, x) => s + x.pacePercent, 0) / subjects.length,
+      )
+    : 0;
 
-const subjectRows = Object.values(paceBySubject).map((pace) => {
-  const warning = warningsData.find(
-    (w) => w.subject?.toLowerCase() === pace.subject?.toLowerCase()
-  );
-  return {
-    subject: pace.subject,
-    pacePercent: pace.pace_percent ?? 0,
-    pacesBehind: pace.paces_behind ?? 0,
-    teacher: warning?.teacher || "—",
-    attendance: warning?.attendance ?? null,
-    trend: warning?.trend || "stable",
-    status: warning?.status || "On Track",
-    riskLevel: warning?.risk_level || "low",
-  };
-});
-
-  // Overall average pace
-  const avgPace =
-    subjectRows.length > 0
-      ? Math.round(subjectRows.reduce((sum, s) => sum + s.pacePercent, 0) / subjectRows.length)
-      : 0;
-
-  const trendIcon = {
-    improving: "arrow-up-circle",
-    declining: "arrow-down-circle",
-    stable: "remove-circle",
-  };
-
+  // ── Skeleton ──
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={{ color: colors.muted, marginTop: 12, fontSize: 14 }}>
-          Loading pace data...
-        </Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32, backgroundColor: colors.bg }}>
-        <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
-        <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700", marginTop: 16, textAlign: "center" }}>
-          {error}
-        </Text>
-      </View>
-    );
-  }
-
-  if (subjectRows.length === 0) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32, backgroundColor: colors.bg }}>
-        <Ionicons name="school-outline" size={48} color={colors.muted} />
-        <Text style={{ color: colors.muted, fontSize: 15, marginTop: 16, textAlign: "center" }}>
-          No pace records found for this student.
-        </Text>
-      </View>
+      <ScrollView
+        contentContainerStyle={{ padding: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Skeleton width={160} height={26} style={{ marginBottom: 6 }} />
+        <Skeleton width={110} height={14} style={{ marginBottom: 20 }} />
+        <Skeleton
+          width="100%"
+          height={100}
+          radius={20}
+          style={{ marginBottom: 16 }}
+        />
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton
+            key={i}
+            width="100%"
+            height={110}
+            radius={18}
+            style={{ marginBottom: 12 }}
+          />
+        ))}
+      </ScrollView>
     );
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} showsVerticalScrollIndicator={false}>
-      <View style={styles.pagePad}>
-
+    <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load(true)}
+            tintColor={colors.accent}
+          />
+        }
+      >
         {/* Header */}
         <View style={{ marginBottom: 20 }}>
-          <Text style={styles.h1}>PACE Progress</Text>
-          <Text style={[styles.p, { color: colors.muted }]}>
+          <Text
+            style={{
+              fontSize: 22,
+              fontWeight: "800",
+              color: colors.text,
+              letterSpacing: -0.5,
+            }}
+          >
+            Grades
+          </Text>
+          <Text style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>
             {profile.gradeLevel || ""}
-            {profile.gradeLevel && profile.section ? " — " : ""}
+            {profile.gradeLevel && profile.section ? " · " : ""}
             {profile.section || ""}
           </Text>
         </View>
 
-        {/* Overall Average Card */}
-        <View style={[styles.card, {
-          marginBottom: 20,
-          backgroundColor: getPaceColor(colors, avgPace),
-          borderColor: getPaceColor(colors, avgPace),
-        }]}>
-          <Text style={{ fontSize: 13, fontWeight: "600", color: "#fff", opacity: 0.85, marginBottom: 4 }}>
-            Overall PACE Completion
-          </Text>
-          <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" }}>
-            <Text style={{ fontSize: 52, fontWeight: "800", color: "#fff" }}>
-              {avgPace}%
-            </Text>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: "#fff", opacity: 0.85 }}>
-              {subjectRows.length} Subjects
+        {/* Error */}
+        {error && (
+          <View
+            style={{
+              backgroundColor: "#F8717115",
+              borderRadius: 12,
+              padding: 12,
+              marginBottom: 16,
+              flexDirection: "row",
+              alignItems: "center",
+            }}
+          >
+            <Ionicons
+              name="cloud-offline-outline"
+              size={15}
+              color="#F87171"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={{ fontSize: 12, color: "#F87171", flex: 1 }}>
+              {error}
             </Text>
           </View>
-          <Text style={{ fontSize: 13, color: "#fff", opacity: 0.85, marginTop: 4 }}>
-            {getPaceRemarks(avgPace)}
+        )}
+
+        {/* Average grade card */}
+        {subjects.length > 0 && (
+          <View
+            style={{
+              backgroundColor: `${gradeColor(avgGrade)}18`,
+              borderRadius: 20,
+              padding: 20,
+              marginBottom: 20,
+              borderWidth: 1,
+              borderColor: `${gradeColor(avgGrade)}35`,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <View>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "600",
+                  color: colors.muted,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  marginBottom: 4,
+                }}
+              >
+                Overall Average
+              </Text>
+              <Text
+                style={{
+                  fontSize: 48,
+                  fontWeight: "800",
+                  color: gradeColor(avgGrade),
+                  letterSpacing: -2,
+                }}
+              >
+                {avgGrade}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: `${gradeColor(avgGrade)}bb`,
+                  fontWeight: "600",
+                }}
+              >
+                {gradeRemarks(avgGrade)}
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Ionicons
+                name="school-outline"
+                size={40}
+                color={`${gradeColor(avgGrade)}50`}
+              />
+              <Text style={{ fontSize: 12, color: colors.muted, marginTop: 8 }}>
+                {subjects.length} subject{subjects.length !== 1 ? "s" : ""}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Subject cards */}
+        {subjects.length > 0 ? (
+          <>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "800",
+                color: colors.muted,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                marginBottom: 12,
+              }}
+            >
+              Subject Grades
+            </Text>
+            {subjects.map((s, i) => (
+              <SubjectCard key={s.subject} {...s} index={i} />
+            ))}
+          </>
+        ) : (
+          !error && (
+            <View style={{ alignItems: "center", paddingVertical: 60 }}>
+              <Ionicons name="school-outline" size={48} color="#475569" />
+              <Text
+                style={{
+                  fontSize: 15,
+                  fontWeight: "700",
+                  color: "#94A3B8",
+                  marginTop: 16,
+                  marginBottom: 4,
+                }}
+              >
+                No grades yet
+              </Text>
+              <Text
+                style={{ fontSize: 13, color: "#475569", textAlign: "center" }}
+              >
+                Grades will appear once your PACE records are entered.
+              </Text>
+            </View>
+          )
+        )}
+
+        <View style={{ alignItems: "center", marginTop: 8 }}>
+          <Text style={{ fontSize: 11, color: "#334155" }}>
+            Pull down to refresh
           </Text>
         </View>
-
-        {/* Subject Rows */}
-        <Text style={[styles.h2, { marginBottom: 12 }]}>Subject Breakdown</Text>
-
-        {subjectRows.map((s, index) => {
-          const color = subjectColors[s.subject] || colors.accent;
-          const paceColor = getPaceColor(colors, s.pacePercent);
-          const icon = getIconForSubject(s.subject);
-          const trend = s.trend?.toLowerCase() || "stable";
-
-          return (
-            <View
-              key={`${s.subject}-${index}`}
-              style={[styles.card, { marginBottom: 12 }]}
-            >
-              {/* Top row: icon + name + trend + percent */}
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
-                <View style={{
-                  width: 44, height: 44, borderRadius: 14,
-                  backgroundColor: `${color}22`,
-                  alignItems: "center", justifyContent: "center",
-                  marginRight: 12,
-                }}>
-                  <Ionicons name={icon} size={20} color={color} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>
-                    {s.subject}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
-                    {s.teacher}
-                  </Text>
-                </View>
-
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={{ fontSize: 22, fontWeight: "800", color: paceColor }}>
-                    {Math.round(s.pacePercent)}%
-                  </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
-                    <Ionicons
-                      name={trendIcon[trend] || "remove-circle"}
-                      size={13}
-                      color={trend === "improving" ? colors.green : trend === "declining" ? colors.red : colors.muted}
-                    />
-                    <Text style={{ fontSize: 11, color: colors.muted, textTransform: "capitalize" }}>
-                      {trend}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Progress bar */}
-              <View style={{
-                height: 8, borderRadius: 8,
-                backgroundColor: `${paceColor}22`,
-                marginBottom: 10,
-              }}>
-                <View style={{
-                  height: 8, borderRadius: 8,
-                  backgroundColor: paceColor,
-                  width: `${Math.min(100, s.pacePercent)}%`,
-                }} />
-              </View>
-
-              {/* Bottom row: badges */}
-              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                <View style={pill(paceColor)}>
-                  <Text style={pillText(paceColor)}>{s.status}</Text>
-                </View>
-                {s.pacesBehind > 0 && (
-                  <View style={pill(colors.red)}>
-                    <Text style={pillText(colors.red)}>{s.pacesBehind} pace{s.pacesBehind > 1 ? "s" : ""} behind</Text>
-                  </View>
-                )}
-                {s.attendance !== null && (
-                  <View style={pill(colors.muted)}>
-                    <Text style={pillText(colors.muted)}>Attendance: {Math.round(s.attendance)}%</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          );
-        })}
-
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </Animated.View>
   );
 }
