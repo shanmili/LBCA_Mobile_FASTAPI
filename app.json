@@ -21,7 +21,8 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "usesCleartextTraffic": true,
-      "networkSecurityConfig": "./network_security_config.xml"
+      "networkSecurityConfig": "./network_security_config.xml",
+      "package": "com.seffzxc321.LBCA_Mobile"
     },
     "web": {
       "output": "static",
@@ -44,6 +45,12 @@
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "46d4de59-55d6-42f6-b8f2-30ce8a481646"
+      }
     }
   }
 }

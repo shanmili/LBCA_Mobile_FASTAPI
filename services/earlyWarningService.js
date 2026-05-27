@@ -7,7 +7,11 @@ const normalizeList = (data) => {
   return [];
 };
 
-export async function listEarlyWarnings({ studentId, enrollmentId, riskLevel } = {}) {
+export async function listEarlyWarnings({
+  studentId,
+  enrollmentId,
+  riskLevel,
+} = {}) {
   const params = {};
   if (studentId) params.student_id = studentId;
   if (enrollmentId) params.enrollment_id = enrollmentId;
@@ -18,13 +22,31 @@ export async function listEarlyWarnings({ studentId, enrollmentId, riskLevel } =
 }
 
 export async function getStudentWarnings(studentId) {
-  const response = await apiClient.get(API_ENDPOINTS.studentWarningsById(studentId));
-  return normalizeList(response.data);
+  try {
+    const response = await apiClient.get(
+      API_ENDPOINTS.studentWarningsById(studentId),
+    );
+    // Backend returns { message: "No warnings..." } when empty — handle gracefully
+    if (response.data?.message) return [];
+    return normalizeList(response.data);
+  } catch (err) {
+    if (err?.response?.status === 404) return [];
+    throw err;
+  }
 }
 
 export async function getStudentPace(studentId) {
-  const response = await apiClient.get(API_ENDPOINTS.studentPaceById(studentId));
-  return response.data;
+  try {
+    const response = await apiClient.get(
+      API_ENDPOINTS.studentPaceById(studentId),
+    );
+    // Backend returns 404 JSON { error: "..." } when no records — handle gracefully
+    if (response.data?.error) return [];
+    return normalizeList(response.data);
+  } catch (err) {
+    if (err?.response?.status === 404) return [];
+    throw err;
+  }
 }
 
 export async function getCriticalWarnings() {

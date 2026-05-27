@@ -31,10 +31,20 @@ const normalizeRisk = (v) => {
   if (s.includes("moderate")) return "moderate";
   return "low";
 };
-const normalizeTrend = (v) => {
-  const s = String(v || "").toLowerCase();
-  if (s.includes("improv")) return "improving";
-  if (s.includes("declin")) return "declining";
+
+// Derive risk level purely from pace/grade percentage so updates are reflected immediately
+const riskFromPct = (pct) => {
+  if (pct < 60) return "critical";
+  if (pct < 75) return "high";
+  if (pct < 85) return "moderate";
+  return "low";
+};
+const trendFromPct = (pct, apiTrend) => {
+  const n = Number(pct);
+  const api = String(apiTrend || "").toLowerCase();
+  if (!Number.isFinite(n)) return "stable";
+  if (n >= 85 && api.includes("improv")) return "improving";
+  if (n < 85) return "declining";
   return "stable";
 };
 
@@ -43,7 +53,7 @@ const RISK_CONFIG = {
     label: "Critical",
     color: "#F87171",
     bg: "#F8717115",
-    icon: "skull-outline",
+    icon: "warning-circle-outline",
     bar: "#F87171",
   },
   high: {
@@ -104,8 +114,11 @@ function buildData(paceRaw, warningsRaw) {
   const warnings = toList(warningsRaw);
 
   const warnMap = {};
+  const teacherMap = {};
   warnings.forEach((w) => {
-    warnMap[String(w.subject || "").toLowerCase()] = w;
+    const k = String(w.subject || "").toLowerCase();
+    warnMap[k] = w;
+    if (w.teacher) teacherMap[k] = w.teacher;
   });
 
   // Deduplicate paces
@@ -120,10 +133,6 @@ function buildData(paceRaw, warningsRaw) {
         ? {
             ...prev,
             pace_percent: toNum(prev.pace_percent) + toNum(p.pace_percent),
-            paces_behind: Math.max(
-              toNum(prev.paces_behind),
-              toNum(p.paces_behind),
-            ),
             _count: prev._count + 1,
           }
         : { ...p, _count: 1 },
@@ -137,15 +146,15 @@ function buildData(paceRaw, warningsRaw) {
     return {
       subject: p.subject || w.subject || "Subject",
       pacePercent: pct,
-      pacesBehind: toNum(p.paces_behind, toNum(w.paces_behind, 0)),
-      teacher: w.teacher || p.teacher || "—",
-      status: w.status || p.status || "On Track",
-      trend: normalizeTrend(w.trend || p.trend),
-      riskLevel: normalizeRisk(
-        w.risk_level || (pct < 60 ? "high" : pct < 75 ? "moderate" : "low"),
-      ),
-      attendance: toNum(w.attendance ?? w.attendance_percent, 0),
-      lastActivity: w.last_activity || w.lastActivity || "—",
+      teacher: w.teacher || p.teacher || teacherMap[key] || "—",
+      trend: trendFromPct(pct, w.trend || p.trend),
+      riskLevel: riskFromPct(pct),
+      status: {
+        critical: "Critical",
+        high: "At Risk",
+        moderate: "Warning",
+        low: "On Track",
+      }[riskFromPct(pct)],
       color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
     };
   });
@@ -154,16 +163,19 @@ function buildData(paceRaw, warningsRaw) {
   warnings.forEach((w) => {
     const key = String(w.subject || "").toLowerCase();
     if (!subjects.find((s) => String(s.subject).toLowerCase() === key)) {
+      const wPct = toNum(w.pace_percent ?? w.pacePercent, 0);
       subjects.push({
         subject: w.subject || "Subject",
-        pacePercent: toNum(w.pace_percent ?? w.pacePercent, 0),
-        pacesBehind: toNum(w.paces_behind ?? w.pacesBehind, 0),
+        pacePercent: wPct,
         teacher: w.teacher || "—",
-        status: w.status || "Warning",
-        trend: normalizeTrend(w.trend),
-        riskLevel: normalizeRisk(w.risk_level),
-        attendance: toNum(w.attendance ?? w.attendance_percent, 0),
-        lastActivity: w.last_activity || w.lastActivity || "—",
+        trend: trendFromPct(wPct, w.trend),
+        riskLevel: riskFromPct(wPct),
+        status: {
+          critical: "Critical",
+          high: "At Risk",
+          moderate: "Warning",
+          low: "On Track",
+        }[riskFromPct(wPct)],
         color: SUBJECT_PALETTE[subjects.length % SUBJECT_PALETTE.length],
       });
     }
@@ -188,8 +200,6 @@ function buildData(paceRaw, warningsRaw) {
         subjects.reduce((a, s) => a + s.pacePercent, 0) / subjects.length,
       )
     : 0;
-  const totalBehind = subjects.reduce((a, s) => a + s.pacesBehind, 0);
-
   const declining = subjects.filter((s) => s.trend === "declining").length;
   const improving = subjects.filter((s) => s.trend === "improving").length;
   const overallTrend =
@@ -204,7 +214,6 @@ function buildData(paceRaw, warningsRaw) {
     overallRisk,
     overallTrend,
     avgPace,
-    totalBehind,
     atRisk,
     warnings: warnings2,
     onTrack,
@@ -337,16 +346,14 @@ function TierHeader({ label, count, color, icon }) {
 function SubjectCard({
   subject,
   pacePercent,
-  pacesBehind,
   teacher,
   status,
   trend,
   riskLevel,
-  attendance,
-  lastActivity,
   color,
   index,
 }) {
+  const { colors } = useTheme();
   const rc = riskConf(riskLevel);
   const tc = trendConf(trend);
   const paceColor =
@@ -355,204 +362,135 @@ function SubjectCard({
   return (
     <View
       style={{
-        backgroundColor: "#1E293B",
-        borderRadius: 16,
-        padding: 16,
+        backgroundColor: colors.card,
+        borderRadius: 20,
+        padding: 20,
         marginBottom: 10,
         borderWidth: 1,
-        borderColor: `${rc.color}25`,
+        borderColor: colors.border,
         borderLeftWidth: 3,
         borderLeftColor: rc.color,
+        flexDirection: "row",
+        alignItems: "flex-start",
       }}
     >
-      {/* Top row */}
+      {/* Icon */}
       <View
         style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 12,
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          backgroundColor: `${rc.color}22`,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: 14,
+          flexShrink: 0,
         }}
       >
-        <View style={{ flex: 1, paddingRight: 8 }}>
-          <Text
-            style={{
-              fontSize: 14,
-              fontWeight: "800",
-              color: "#F1F5F9",
-              marginBottom: 2,
-            }}
-            numberOfLines={1}
-          >
-            {subject}
-          </Text>
-          {teacher !== "—" && (
-            <Text style={{ fontSize: 11, color: "#64748B" }}>👤 {teacher}</Text>
-          )}
-        </View>
-        <View style={{ alignItems: "flex-end", gap: 4 }}>
-          <View
-            style={{
-              backgroundColor: rc.bg,
-              borderRadius: 8,
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-            }}
-          >
-            <Text style={{ fontSize: 10, fontWeight: "800", color: rc.color }}>
-              {rc.label}
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-            <Ionicons name={tc.icon} size={11} color={tc.color} />
-            <Text style={{ fontSize: 10, fontWeight: "600", color: tc.color }}>
-              {tc.label}
-            </Text>
-          </View>
-        </View>
+        <Ionicons name={rc.icon} size={20} color={rc.color} />
       </View>
 
-      {/* Pace bar */}
-      <View style={{ marginBottom: 10 }}>
+      <View style={{ flex: 1 }}>
+        {/* Risk badge + trend */}
         <View
           style={{
             flexDirection: "row",
-            justifyContent: "space-between",
-            marginBottom: 5,
+            alignItems: "center",
+            marginBottom: 4,
+            gap: 6,
           }}
         >
-          <Text
+          <View
             style={{
-              fontSize: 10,
-              fontWeight: "600",
-              color: "#64748B",
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
+              backgroundColor: `${rc.color}22`,
+              borderRadius: 100,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
             }}
           >
-            PACE Progress
-          </Text>
-          <Text style={{ fontSize: 11, fontWeight: "800", color: paceColor }}>
-            {pacePercent}%
-          </Text>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                color: rc.color,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}
+            >
+              {rc.label}
+            </Text>
+          </View>
         </View>
+
+        {/* Subject name */}
+        <Text
+          style={{
+            fontSize: 14,
+            fontWeight: "700",
+            color: colors.text,
+            marginBottom: 4,
+          }}
+          numberOfLines={1}
+        >
+          {subject}
+        </Text>
+
+        {/* Status */}
+        <Text
+          style={{
+            fontSize: 13,
+            color: colors.muted,
+            lineHeight: 18,
+            marginBottom: 8,
+          }}
+        >
+          {status}
+        </Text>
+
+        {/* Progress bar */}
         <Bar
           value={pacePercent}
           color={paceColor}
           height={7}
           delay={index * 60}
         />
-      </View>
 
-      {/* Stats row */}
-      <View style={{ flexDirection: "row", gap: 6 }}>
+        {/* Footer: pace % + trend */}
         <View
           style={{
-            flex: 1,
-            backgroundColor: "#ffffff06",
-            borderRadius: 10,
-            padding: 8,
+            flexDirection: "row",
+            justifyContent: "space-between",
             alignItems: "center",
+            marginTop: 8,
           }}
         >
           <Text
-            style={{
-              fontSize: 9,
-              color: "#64748B",
-              marginBottom: 2,
-              textTransform: "uppercase",
-              letterSpacing: 0.4,
-            }}
+            style={{ fontSize: 11, color: colors.muted, fontWeight: "600" }}
           >
-            Behind
+            {pacePercent}% pace
           </Text>
-          <Text
-            style={{
-              fontSize: 15,
-              fontWeight: "800",
-              color: pacesBehind > 0 ? "#F87171" : "#34D399",
-            }}
-          >
-            {pacesBehind}
-          </Text>
-        </View>
-        {attendance > 0 && (
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: "#ffffff06",
-              borderRadius: 10,
-              padding: 8,
-              alignItems: "center",
-            }}
-          >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Ionicons name={tc.icon} size={12} color={tc.color} />
             <Text
               style={{
-                fontSize: 9,
-                color: "#64748B",
-                marginBottom: 2,
-                textTransform: "uppercase",
-                letterSpacing: 0.4,
+                fontSize: 11,
+                fontWeight: "600",
+                color: tc.color,
+                textTransform: "capitalize",
               }}
             >
-              Attendance
-            </Text>
-            <Text
-              style={{
-                fontSize: 15,
-                fontWeight: "800",
-                color:
-                  attendance >= 90
-                    ? "#34D399"
-                    : attendance >= 75
-                      ? "#FBBF24"
-                      : "#F87171",
-              }}
-            >
-              {attendance}%
+              {tc.label}
             </Text>
           </View>
-        )}
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#ffffff06",
-            borderRadius: 10,
-            padding: 8,
-            alignItems: "center",
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 9,
-              color: "#64748B",
-              marginBottom: 2,
-              textTransform: "uppercase",
-              letterSpacing: 0.4,
-            }}
-          >
-            Status
-          </Text>
-          <Text
-            style={{ fontSize: 11, fontWeight: "700", color: paceColor }}
-            numberOfLines={1}
-          >
-            {status}
-          </Text>
         </View>
       </View>
-
-      {lastActivity && lastActivity !== "—" && (
-        <Text style={{ fontSize: 10, color: "#475569", marginTop: 8 }}>
-          🕐 Last activity: {lastActivity}
-        </Text>
-      )}
     </View>
   );
 }
 
 // ─── Summary metric box ───────────────────────────────────────────────────────
 function MetricBox({ icon, label, value, color, sub }) {
+  const { colors } = useTheme();
   return (
     <View
       style={{
@@ -581,7 +519,7 @@ function MetricBox({ icon, label, value, color, sub }) {
         style={{
           fontSize: 9,
           fontWeight: "600",
-          color: "#64748B",
+          color: colors.muted,
           textTransform: "uppercase",
           letterSpacing: 0.5,
           marginTop: 2,
@@ -591,7 +529,7 @@ function MetricBox({ icon, label, value, color, sub }) {
         {label}
       </Text>
       {sub ? (
-        <Text style={{ fontSize: 9, color: "#475569", marginTop: 1 }}>
+        <Text style={{ fontSize: 9, color: colors.muted, marginTop: 1 }}>
           {sub}
         </Text>
       ) : null}
@@ -739,14 +677,14 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
               style={{
                 fontSize: 22,
                 fontWeight: "800",
-                color: "#F1F5F9",
+                color: colors.text,
                 letterSpacing: -0.5,
               }}
             >
               Risk Assessment
             </Text>
           </View>
-          <Text style={{ fontSize: 12, color: "#64748B" }}>
+          <Text style={{ fontSize: 12, color: colors.muted }}>
             {firstName} {lastName}
             {gradeLabel ? "  ·  " + gradeLabel : ""}
           </Text>
@@ -841,31 +779,6 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
               </Text>
             </View>
           </View>
-          {data?.totalBehind > 0 && (
-            <View style={{ alignItems: "center" }}>
-              <Text
-                style={{
-                  fontSize: 26,
-                  fontWeight: "800",
-                  color: "#F87171",
-                  letterSpacing: -1,
-                }}
-              >
-                {data.totalBehind}
-              </Text>
-              <Text
-                style={{
-                  fontSize: 9,
-                  fontWeight: "600",
-                  color: "#F87171aa",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                }}
-              >
-                behind
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* ── Summary metrics ── */}
@@ -966,12 +879,12 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
         {visible.length === 0 ? (
           <View
             style={{
-              backgroundColor: "#1E293B",
+              backgroundColor: colors.card,
               borderRadius: 20,
               padding: 32,
               alignItems: "center",
               borderWidth: 1,
-              borderColor: "#ffffff10",
+              borderColor: colors.border,
             }}
           >
             <Ionicons
@@ -991,7 +904,7 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
               All clear!
             </Text>
             <Text
-              style={{ fontSize: 12, color: "#64748B", textAlign: "center" }}
+              style={{ fontSize: 12, color: colors.muted, textAlign: "center" }}
             >
               No subjects match this filter.
             </Text>
@@ -1004,7 +917,7 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
                   label="Critical"
                   count={criticals.length}
                   color="#F87171"
-                  icon="skull-outline"
+                  icon="warning-circle-outline"
                 />
                 {criticals.map((s, i) => (
                   <SubjectCard key={s.subject + i} {...s} index={i} />
@@ -1054,7 +967,7 @@ const MyRiskDetail = ({ onBack, studentId, baseStudent = null }) => {
         )}
 
         <View style={{ alignItems: "center", marginTop: 16 }}>
-          <Text style={{ fontSize: 11, color: "#334155" }}>
+          <Text style={{ fontSize: 11, color: colors.muted }}>
             Pull down to refresh
           </Text>
         </View>
